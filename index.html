@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0F1115">
-<title>FundSprout — Financial Tracker</title>
+<title>FundSprout - Financial Tracker</title>
 <style>
 @font-face{font-family:Inter;src:local("Inter");}
 :root{
@@ -80,11 +80,6 @@ tr:hover td{background:rgba(255,255,255,.025)}
  .panel{border-radius:16px}
 }
 @media(max-width:430px){.grid,.grid.five{grid-template-columns:1fr 1fr} .label{font-size:9px} .value{font-size:19px} .subtitle{font-size:12px}}
-
-.group-description{min-width:280px}
-.group-total-label{margin-bottom:8px;font-weight:800}
-.group-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:5px 0;border-top:1px solid var(--border)}
-.group-item small{grid-column:1/-1;color:var(--muted);font-size:11px;margin-top:-4px}
 </style>
 </head>
 <body>
@@ -146,104 +141,103 @@ const DATA = [{"date": "2026-08-03", "day": "Mon", "type": "Allowance", "descrip
 const money = n => new Intl.NumberFormat('en-PH', {style:'currency',currency:'PHP',minimumFractionDigits:2}).format(n);
 let activeFilter = 'all';
 
-function getAllowanceWeek(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  const day = d.getDay(); // Sun=0, Mon=1
-  const monday = new Date(d);
-  monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-  const friday = new Date(monday);
-  friday.setDate(monday.getDate() + 4);
-  const start = monday.toISOString().slice(0,10);
-  const end = friday.toISOString().slice(0,10);
-  return {start, end};
-}
-function formatPeriodDate(dateStr) {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-PH', {
-    month:'long', day:'numeric', year:'numeric'
-  });
-}
 function render() {
   const q = document.getElementById('search').value.trim().toLowerCase();
   const body = document.getElementById('rows');
   body.innerHTML = '';
-
   const filtered = DATA.filter(x => {
     const matchesFilter = activeFilter === 'all' || x.type === activeFilter;
     const hay = [x.date,x.day,x.type,x.description,x.category,x.notes].join(' ').toLowerCase();
     return matchesFilter && hay.includes(q);
   });
+  document.getElementById('empty').style.display = filtered.length ? 'none' : 'block';
+  // Allowance is displayed by Monday-Friday period, while expense records remain unchanged.
+  const allowancePeriods = [
+    ['2026-08-03','2026-08-07','Aug 3–7','Mon–Fri'],
+    ['2026-08-10','2026-08-14','Aug 10–14','Mon–Fri'],
+    ['2026-08-17','2026-08-21','Aug 17–21','Mon–Fri'],
+    ['2026-08-24','2026-08-28','Aug 24–28','Mon–Fri'],
+    ['2026-08-31','2026-09-04','Aug 31–Sep 4','Mon–Fri'],
+    ['2026-09-07','2026-09-11','Sep 7–11','Mon–Fri'],
+    ['2026-09-14','2026-09-18','Sep 14–18','Mon–Fri']
+  ];
 
-  // Allowances are grouped into the actual Monday-Friday allowance week.
-  // The original individual records remain untouched in DATA.
-  const allowanceGroups = new Map();
-  const expenseGroups = new Map();
+  const allowanceRows = [];
+  if (activeFilter === 'all' || activeFilter === 'Allowance') {
+    allowancePeriods.forEach(([start,end,label,days]) => {
+      const records = DATA.filter(x => x.type === 'Allowance' && x.date >= start && x.date <= end);
+      const matchingRecords = records.filter(x => [x.date,x.day,x.type,x.description,x.category,x.notes].join(' ').toLowerCase().includes(q));
+      // A period is shown when its allowance records match the search, or when there is no search.
+      if (!q || matchingRecords.length) {
+        allowanceRows.push({label, days, records});
+      }
+    });
+  }
 
-  filtered.forEach(x => {
-    if (x.type === 'Allowance') {
-      const p = getAllowanceWeek(x.date);
-      const key = p.start;
-      if (!allowanceGroups.has(key)) allowanceGroups.set(key, {...p, items:[], total:0});
-      const g = allowanceGroups.get(key);
-      g.items.push(x);
-      g.total += Number(x.amount) || 0;
-    } else {
-      const key = x.date;
-      if (!expenseGroups.has(key)) expenseGroups.set(key, {date:x.date, day:x.day, items:[], total:0});
-      const g = expenseGroups.get(key);
-      g.items.push(x);
-      g.total += Number(x.amount) || 0;
-    }
-  });
-
-  let displayed = 0;
-
-  if (activeFilter !== 'Expense') {
-    allowanceGroups.forEach(g => {
-      displayed++;
+  if (activeFilter === 'Allowance') {
+    allowanceRows.forEach(period => {
       const tr = document.createElement('tr');
-      const details = g.items.map(x =>
-        `<div class="group-item">
-          <strong>${escapeHtml(x.description)}</strong>
-          <span>${money(x.amount).replace('PHP','').trim()}</span>
-          ${x.notes ? `<small>${escapeHtml(x.notes)}</small>` : ''}
-        </div>`
-      ).join('');
+      const total = period.records.reduce((sum, x) => sum + Number(x.amount || 0), 0);
+      const descriptions = period.records.map(x => `<div><strong>${escapeHtml(x.description)}</strong> — ${money(x.amount).replace('PHP','').trim()}${x.notes ? ` <small>(${escapeHtml(x.notes)})</small>` : ''}</div>`).join('');
       tr.innerHTML = `
-        <td>${formatPeriodDate(g.start)} – ${formatPeriodDate(g.end)}</td>
-        <td>Mon–Fri</td>
+        <td>${period.label}</td>
+        <td>${period.days}</td>
         <td><span class="type-pill in">Allowance</span></td>
-        <td class="group-description"><div class="group-total-label">Total Allowance: <strong>${money(g.total)}</strong></div>${details}</td>
+        <td>${descriptions || '—'}</td>
         <td>Income</td>
-        <td>All allowance descriptions and amounts for this period</td>
-        <td class="amount income">+${money(g.total).replace('PHP','').trim()}</td>`;
+        <td>All allowance records in this period</td>
+        <td class="amount income">+${money(total).replace('PHP','').trim()}</td>`;
       body.appendChild(tr);
     });
-  }
+  } else {
+    // Expenses are grouped by date. Each date appears once, with every
+    // individual expense description and amount listed underneath it.
+    const expenseRecords = DATA.filter(x => x.type === 'Expense');
+    const expenseDates = [...new Set(expenseRecords.map(x => x.date))].sort();
+    expenseDates.forEach(date => {
+      const dayRecords = expenseRecords.filter(x => x.date === date);
+      const matchingRecords = q
+        ? dayRecords.filter(x => [x.date,x.day,x.type,x.description,x.category,x.notes].join(' ').toLowerCase().includes(q))
+        : dayRecords;
+      if (!matchingRecords.length) return;
 
-  if (activeFilter !== 'Allowance') {
-    expenseGroups.forEach(g => {
-      displayed++;
+      // When searching, show only matching expense records for that date.
+      // Without search, show every expense recorded on that date.
+      const recordsToShow = q ? matchingRecords : dayRecords;
+      const total = recordsToShow.reduce((sum, x) => sum + Number(x.amount || 0), 0);
+      const day = dayRecords[0]?.day || '';
+      const descriptions = recordsToShow.map(x => `
+        <div class="expense-detail">
+          <strong>${escapeHtml(x.description)}</strong> — ${money(x.amount).replace('PHP','').trim()}${x.notes ? ` <small>(${escapeHtml(x.notes)})</small>` : ''}
+        </div>`).join('');
+
       const tr = document.createElement('tr');
-      const details = g.items.map(x =>
-        `<div class="group-item">
-          <strong>${escapeHtml(x.description)}</strong>
-          <span>${money(x.amount).replace('PHP','').trim()}</span>
-          ${x.notes ? `<small>${escapeHtml(x.notes)}</small>` : ''}
-        </div>`
-      ).join('');
       tr.innerHTML = `
-        <td>${g.date}</td>
-        <td>${g.day}</td>
+        <td>${date}</td>
+        <td>${escapeHtml(day)}</td>
         <td><span class="type-pill out">Expense</span></td>
-        <td class="group-description"><div class="group-total-label">Total Expenses: <strong>${money(g.total)}</strong></div>${details}</td>
-        <td>—</td>
-        <td>All expense descriptions and amounts for this date</td>
-        <td class="amount out">−${money(g.total).replace('PHP','').trim()}</td>`;
+        <td>${descriptions}</td>
+        <td>Daily Total</td>
+        <td>${recordsToShow.length} expense${recordsToShow.length === 1 ? '' : 's'}</td>
+        <td class="amount out">−${money(total).replace('PHP','').trim()}</td>`;
+      body.appendChild(tr);
+    });
+
+    allowanceRows.forEach(period => {
+      const tr = document.createElement('tr');
+      const total = period.records.reduce((sum, x) => sum + Number(x.amount || 0), 0);
+      const descriptions = period.records.map(x => `<div><strong>${escapeHtml(x.description)}</strong> — ${money(x.amount).replace('PHP','').trim()}${x.notes ? ` <small>(${escapeHtml(x.notes)})</small>` : ''}</div>`).join('');
+      tr.innerHTML = `
+        <td>${period.label}</td>
+        <td>${period.days}</td>
+        <td><span class="type-pill in">Allowance</span></td>
+        <td>${descriptions || '—'}</td>
+        <td>Income</td>
+        <td>All allowance records in this period</td>
+        <td class="amount income">+${money(total).replace('PHP','').trim()}</td>`;
       body.appendChild(tr);
     });
   }
-
-  document.getElementById('empty').style.display = displayed ? 'none' : 'block';
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
